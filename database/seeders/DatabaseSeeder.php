@@ -2,7 +2,7 @@
 
 namespace Database\Seeders;
 
-use App\Models\{Category, Customer, Order, OrderItem, Product};
+use App\Models\{Category, Customer, Order, OrderItem, Product, User};
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -15,6 +15,12 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        User::create([
+            'name'     => 'First User',
+            'email'    => 'first_user@email.com',
+            'password' => bcrypt('12345678')
+        ]);
+
         // Seed Categories
         $categories = [];
         $categoryNames = ['Electronics', 'Groceries', 'Beverages', 'Dairy', 'Snacks', 'Stationery'];
