@@ -16,7 +16,7 @@ class OrderController extends Controller
     {
         $request->validate([
             'customer_id' => 'required|exists:customers,id',
-            'items'       => 'required|array'
+            'items' => 'required|array',
         ]);
 
         DB::beginTransaction();
@@ -25,24 +25,25 @@ class OrderController extends Controller
             $totalAmount = 0;
 
             $order = Order::create([
-                'customer_id'  => $request->customer_id,
+                'customer_id' => $request->customer_id,
                 'total_amount' => 0,
-                'status'       => 'pending'
+                'status' => 'pending',
             ]);
 
             foreach ($request->items as $item) {
                 $product = Product::find($item['product_id']);
 
-                if (!$product || $product->stock < $item['quantity']) {
+                if (! $product || $product->stock < $item['quantity']) {
                     DB::rollBack();
+
                     return response()->json(['error' => 'Product unavailable'], 422);
                 }
 
                 OrderItem::create([
-                    'order_id'   => $order->id,
+                    'order_id' => $order->id,
                     'product_id' => $item['product_id'],
-                    'quantity'   => $item['quantity'],
-                    'unit_price' => $product->price
+                    'quantity' => $item['quantity'],
+                    'unit_price' => $product->price,
                 ]);
 
                 $product->decrement('stock', $item['quantity']);
@@ -52,12 +53,15 @@ class OrderController extends Controller
             $order->update(['total_amount' => $totalAmount]);
             DB::commit();
 
-            Cache::forget("orders.page.1");
+            Cache::forget('orders.page.1');
+            Cache::forget('dashboard.data');
+            Cache::forget('sales.report');
 
             return OrderResource::collection(collect([$order]))->response()->setStatusCode(201);
 
         } catch (\Exception $e) {
             DB::rollBack();
+
             return response()->json(['error' => 'Failed'], 500);
         }
     }
@@ -67,8 +71,8 @@ class OrderController extends Controller
         $page = $request->input('page', 1);
 
         $orders = Cache::remember("orders.page.$page", 60, function () {
-            return Order::with('items.product:id,name,price','customer:id,name')
-                ->paginate(10, ['id','customer_id','status','total_amount','created_at']);
+            return Order::with('items.product:id,name,price', 'customer:id,name')
+                ->paginate(10, ['id', 'customer_id', 'status', 'total_amount', 'created_at']);
         });
 
         return OrderResource::collection($orders);
@@ -80,9 +84,9 @@ class OrderController extends Controller
         $page = $request->input('page', 1);
 
         $orders = Cache::remember("orders.status.$status.page.$page", 60, function () use ($status) {
-            return Order::with('items.product:id,name,price','customer:id,name')
+            return Order::with('items.product:id,name,price', 'customer:id,name')
                 ->where('status', $status)
-                ->paginate(10, ['id','customer_id','status','total_amount','created_at']);
+                ->paginate(10, ['id', 'customer_id', 'status', 'total_amount', 'created_at']);
         });
 
         return OrderResource::collection($orders);

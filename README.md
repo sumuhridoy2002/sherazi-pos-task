@@ -1,113 +1,193 @@
-# 🧪 Sherazi IT — Senior Laravel Developer Interview Task
+# Product & Order API
 
-## ⏱ Time Limit: 2 Hours
+Laravel 13 JSON REST API for **products** and **orders**, with **Laravel Sanctum** bearer-token authentication, **API resources** for consistent responses, **query caching**, and **full-text search** on product `name` and `description` (via a full-text index in the products migration).
 
----
+## Requirements
 
-## 📌 Task Overview
+- **PHP** 8.3+
+- **Composer**
+- **Node.js / npm** — optional unless you run the full frontend dev stack (`composer run dev` uses Vite)
+- A database supported by Laravel (see below)
 
-This Laravel project is a simplified **POS (Point of Sale) backend** for Sherazi IT.
+**Full-text search:** The products table defines a full-text index on `name` and `description`. That matches **MySQL/MariaDB** usage well. The default `.env.example` uses **SQLite**; if search misbehaves on your driver, switch to MySQL/MariaDB and set `DB_*` accordingly.
 
-The codebase has been **intentionally written with performance problems**.
-Your job is to **identify all issues**, **fix them**, and **explain your decisions**.
-
----
-
-## ⚙️ Setup Instructions
+## Quick start
 
 ```bash
-# 1. Clone / extract the project
-cd sherazi-pos-task
-
-# 2. Install dependencies
 composer install
-
-# 3. Copy environment file
-cp .env.example .env
-
-# 4. Generate app key
+cp .env.example .env   # or copy on Windows
 php artisan key:generate
+```
 
-# 5. Configure your DB in .env
-DB_DATABASE=sherazi_pos
-DB_USERNAME=root
-DB_PASSWORD=
+Configure `DB_*` in `.env`. This project sets `CACHE_STORE=database` in `.env.example`; ensure the cache table exists (Laravel ships a migration such as `create_cache_table` — run migrations).
 
-# 6. Run migrations & seed (seeds 500 products, 200 orders — intentionally large)
-php artisan migrate --seed
-
-# 7. Make sure Redis is running
-# Update .env: CACHE_DRIVER=redis, QUEUE_CONNECTION=redis
-
-# 8. Start server
+```bash
+php artisan migrate
+php artisan db:seed
 php artisan serve
 ```
 
----
+API routes are prefixed with **`/api`** (e.g. `http://127.0.0.1:8000/api/login`).
 
-## ✅ What You Must Fix
+## Demo credentials (seeder)
 
-### 1. N+1 Query Problems
-- `GET /api/products` — category loaded per product in a loop
-- `GET /api/orders` — customer & items loaded per order in a loop
-- `GET /api/products/sales-report` — nested N+1 (order → items → product)
+After `php artisan db:seed`:
 
-### 2. Missing Caching
-- `GET /api/products/dashboard` hits DB every request
-- `GET /api/products` no cache layer
-- Cache must **invalidate** when data changes
+| Field    | Value                 |
+| -------- | --------------------- |
+| Email    | `first_user@email.com` |
+| Password | `12345678`            |
 
-### 3. No Pagination
-- `/api/products`, `/api/orders`, `/api/products/sales-report` return ALL records
-- Add proper pagination (15 per page)
+Use these only in local/demo environments; change them in production.
 
-### 4. Database Indexing
-- `products.name` — missing index (used in LIKE search)
-- `orders.status` — missing index (used in WHERE filter)
-- `products.sold_count` — missing index (used in ORDER BY)
+## Authentication
 
-### 5. No DB Transaction in Order Creation
-- `POST /api/orders` — if one item fails, partial data is saved
-- Wrap in `DB::transaction()`
+1. **Login** — `POST /api/login` with JSON body:
+   - `email` (required)
+   - `password` (required)
+2. Response: `{ "token": "<plain-text-token>" }` on success.
+3. **Protected routes:** send header `Authorization: Bearer <token>`.
 
-### 6. SQL Injection Risk
-- `GET /api/orders/filter?status=` — raw query with direct variable
-- Fix using query bindings or Eloquent
+Invalid credentials return **401** with `{ "error": "Invalid credentials" }`. Validation errors return **422** with Laravel’s standard error format.
 
-### 7. Inefficient Counting & Aggregation
-- `Product::all()->count()` — loads all rows into memory just to count
-- Use `Product::count()` and `DB::` aggregates instead
+Tokens are issued via Sanctum (`HasApiTokens` on the `User` model).
 
----
+## API reference
 
-## 📦 Deliverables
+All endpoints except `POST /api/login` require `auth:sanctum` (Bearer token).
 
-1. **GitHub repo** with clean, meaningful commits (not one giant commit)
-2. **Before vs After** screenshot — show query count & response time using Laravel Debugbar or Telescope
-3. **Short README section** — explain what you fixed and why
+### `POST /api/login`
 
----
+|        | Details                                      |
+| ------ | -------------------------------------------- |
+| Body   | `email`, `password`                          |
+| 200    | `{ "token": "..." }`                         |
+| 401    | `{ "error": "Invalid credentials" }`       |
+| 422    | Validation failed                            |
 
-## 🎁 Bonus (If Time Allows)
+### `GET /api/products`
 
-- Add **Laravel Sanctum** authentication to protect routes
-- Add **Redis-based session handling**
-- Setup **Laravel Horizon** for queue monitoring
-- Add **API rate limiting** per user
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| Query  | `page` (optional, default `1`) — paginates **10** items per page       |
+| 200    | Paginated JSON API resource collection (`ProductResource`)            |
 
----
+### `POST /api/products`
 
-## 🎤 After Submission
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| Body   | `name`, `price`, `stock`, `category_id` (see validation rules below)   |
+| 201    | Created product as `ProductResource` collection (single-item wrapper)   |
+| 422    | Validation failed                                                       |
 
-You will have a **15-minute live Q&A** where you will be asked:
-- Why did you choose this approach over alternatives?
-- How would this scale to 100k+ products?
-- What would you do differently if you had more time?
+Validation: `name` required string max 255; `price` required numeric ≥ 0; `stock` required integer ≥ 0; `category_id` required and must exist in `categories`.
 
-> ⚠️ **Screen recording (face + screen) of your full work session is mandatory.**
-> Edited or paused recordings will not be accepted.
+### `GET /api/products/search`
 
----
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| Query  | `q` — full-text search term; `page` optional (10 per page)             |
+| 200    | Paginated `ProductResource` collection                                   |
 
-Good luck! 💪
-— Sherazi IT Team
+### `GET /api/products/dashboard`
+
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| 200    | JSON: `total_products`, `total_orders`, `total_revenue`, `categories` (id, name), `top_products` (by `sold_count`, top 5) |
+
+### `GET /api/products/sales-report`
+
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| 200    | JSON with `summary_by_status` (per-status `order_count`, `revenue`) and `top_products_by_revenue` (top 10 from **completed** orders: `product_id`, `product_name`, `revenue`, `units_sold`) |
+
+### `GET /api/orders`
+
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| Query  | `page` optional — 10 orders per page                                    |
+| 200    | Paginated `OrderResource` (eager-loaded `items` → `product`, `customer`) |
+
+### `POST /api/orders`
+
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| Body   | `customer_id` (must exist in `customers`), `items` non‑empty array. Each item should include `product_id` and `quantity`. |
+| 201    | New order as `OrderResource` collection                                  |
+| 422    | `{ "error": "Product unavailable" }` if a product is missing or stock is insufficient |
+| 500    | `{ "error": "Failed" }` on unexpected failure after rollback           |
+
+**Note:** Stock is **decremented** per line item. **`sold_count` on products is not updated** by this endpoint (it is only whatever you set in seeds or future logic).
+
+### `GET /api/orders/filter`
+
+|        | Details                                                                 |
+| ------ | ----------------------------------------------------------------------- |
+| Query  | `status` — `pending`, `completed`, or `cancelled`; `page` optional     |
+| 200    | Paginated `OrderResource`                                                |
+
+## Response shaping (resources)
+
+- **Products:** `app/Http/Resources/ProductResource.php` — `id`, `name`, `price`, `stock`, `category` (name when loaded).
+- **Orders:** `app/Http/Resources/OrderResource.php` — `id`, `customer`, `status`, `total` (`total_amount`), `items_count`, `items` (product name, quantity, prices), `created_at`.
+
+## Middleware
+
+- **`ForceJsonApi`** (`app/Http/Middleware/ForceJsonApi.php`) — For requests under `api/*`, sets `Accept: application/json` so API routes return JSON. Registered in `bootstrap/app.php`.
+- **Sanctum** — `EnsureFrontendRequestsAreStateful` is prepended on the API stack (default Laravel + Sanctum setup).
+
+## Data model
+
+| Table         | Main columns |
+| ------------- | ------------ |
+| `categories`  | `id`, unique `name`, timestamps |
+| `products`    | `id`, `name`, `description`, `price`, `stock`, `sold_count`, `category_id` (FK), full-text on `name` + `description`, timestamps |
+| `customers`   | `id`, `name`, unique `email`, `phone`, timestamps |
+| `orders`      | `id`, `customer_id` (FK), `status` enum (`pending` / `completed` / `cancelled`), `total_amount`, timestamps |
+| `order_items` | `id`, `order_id`, `product_id`, `quantity`, `unit_price`, timestamps |
+
+Standard Laravel `users` table is used for API login (Sanctum).
+
+```mermaid
+erDiagram
+    Category ||--o{ Product : has
+    Customer ||--o{ Order : places
+    Order ||--o{ OrderItem : contains
+    Product ||--o{ OrderItem : "line item"
+```
+
+## Caching
+
+TTLs are **60 seconds** unless noted.
+
+| Cache key pattern              | Used for                    | TTL |
+| ----------------------------- | --------------------------- | --- |
+| `products.page.{page}`        | Product index               | 60s |
+| `search.{q}.page.{page}`      | Product search              | 30s |
+| `dashboard.data`              | Dashboard aggregates        | 60s |
+| `sales.report`                | Sales report JSON           | 60s |
+| `orders.page.{page}`          | Order index                 | 60s |
+| `orders.status.{status}.page.{page}` | Filtered orders      | 60s |
+
+**Invalidation (partial):** Creating a product clears `products.page.1` and `dashboard.data`. Creating an order clears `orders.page.1`, `dashboard.data`, and `sales.report`. Other pages or search keys may stay cached until they expire.
+
+## Tests & code style
+
+```bash
+composer test
+```
+
+Runs `php artisan test`. The repo includes Breeze-related feature tests; dedicated API tests for these controllers can be added over time.
+
+## Project layout (relevant paths)
+
+- `routes/api.php` — API route definitions
+- `app/Http/Controllers/` — `LoginController`, `ProductController`, `OrderController`
+- `app/Http/Resources/` — `ProductResource`, `OrderResource`
+- `app/Models/` — Eloquent models
+- `database/migrations/` — schema
+- `database/seeders/DatabaseSeeder.php` — demo users, categories, products, customers, orders
+
+## License
+
+The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
