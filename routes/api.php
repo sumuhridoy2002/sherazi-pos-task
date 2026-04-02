@@ -1,27 +1,26 @@
 <?php
 
-use App\Http\Controllers\{ProductController, OrderController};
-use Illuminate\Http\Request;
+use App\Http\Controllers\{LoginController, ProductController, OrderController};
 use Illuminate\Support\Facades\Route;
 
-Route::controller(ProductController::class)
-    ->prefix('products')
-    ->group(function () {
-        Route::get('/', 'index');
-        Route::post('/', 'store');
-        Route::get('/search', 'search');
-        Route::get('/dashboard', 'dashboard');
-        Route::get('/sales-report', 'salesReport');
-    });
+Route::post('/login', LoginController::class);
 
-Route::controller(OrderController::class)
-    ->prefix('orders')
-    ->group(function () {
-        Route::get('/', 'index');
-        Route::post('/', 'store');
-        Route::get('/filter', 'filterByStatus');
-    });
+Route::middleware('auth:sanctum')->group(function () {
+    Route::controller(ProductController::class)
+        ->prefix('products')
+        ->group(function () {
+            Route::get('/', 'index');
+            Route::post('/', 'store');
+            Route::get('/search', 'search');
+            Route::get('/dashboard', 'dashboard');
+            Route::get('/sales-report', 'salesReport');
+        });
 
-Route::middleware(['auth:sanctum'])->get('/user', function (Request $request) {
-    return $request->user();
+    Route::controller(OrderController::class)
+        ->prefix('orders')
+        ->group(function () {
+            Route::get('/', 'index');
+            Route::post('/', 'store');
+            Route::get('/filter', 'filterByStatus');
+        });
 });
