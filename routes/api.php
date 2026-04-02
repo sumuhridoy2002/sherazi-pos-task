@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/login', LoginController::class);
 
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['tenant', 'auth:sanctum'])->group(function () {
     Route::controller(ProductController::class)
         ->prefix('products')
         ->group(function () {

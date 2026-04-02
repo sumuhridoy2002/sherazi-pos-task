@@ -8,9 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
+    protected $connection = 'tenant'; # Multi Tenant used here
+
     protected $fillable = ['name', 'description', 'price', 'stock', 'sold_count', 'category_id'];
 
-    // Relationship exists — but controller never uses with() to eager load it
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);

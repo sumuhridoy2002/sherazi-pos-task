@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\ProductResource;
 use App\Models\Product;
 use App\Models\Category;
 use App\Models\Order;
@@ -10,72 +11,17 @@ use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $result = Cache::remember('products.index', 60, function () {
-            return Product::with('category')->get()->map(function ($product) {
-                return [
-                    'id'       => $product->id,
-                    'name'     => $product->name,
-                    'price'    => $product->price,
-                    'stock'    => $product->stock,
-                    'category' => $product->category?->name
-                ];
-            });
+        $tenant = app('tenant'); # current tenant
+        $page = $request->input('page', 1);
+
+        $products = Cache::remember("tenant.{$tenant->id}.products.page.$page", 60, function () {
+            return Product::with('category:id,name')
+                ->paginate(10, ['id','name','price','stock','category_id']);
         });
 
-        return response()->json($result);
-    }
-
-    public function salesReport()
-    {
-        $report = Cache::remember('report.sales', 120, function () {
-            $orders = Order::with('items.product', 'customer')->get();
-
-            $data = [];
-            foreach ($orders as $order) {
-                foreach ($order->items as $item) {
-                    $data[] = [
-                        'order_id'     => $order->id,
-                        'product_name' => $item->product?->name,
-                        'qty'          => $item->quantity,
-                        'total'        => $item->quantity * $item->product?->price,
-                        'customer'     => $order->customer?->name
-                    ];
-                }
-            }
-            return $data;
-        });
-
-        return response()->json($report);
-    }
-
-    public function dashboard()
-    {
-        $data = Cache::remember('dashboard.data', 60, function () {
-            return [
-                'total_products' => Product::count(),
-                'total_orders'   => Order::count(),
-                'total_revenue'  => Order::sum('total_amount'),
-                'categories'     => Category::all(),
-                'top_products'   => Product::orderByDesc('sold_count')->take(5)->get()
-            ];
-        });
-
-        return response()->json($data);
-    }
-
-    public function search(Request $request)
-    {
-        $keyword = $request->input('q');
-
-        $products = Cache::remember("search.$keyword", 30, function () use ($keyword) {
-            return Product::where('name', 'LIKE', "%$keyword%")
-                ->orWhere('description', 'LIKE', "%$keyword%")
-                ->get();
-        });
-
-        return response()->json($products);
+        return ProductResource::collection($products);
     }
 
     public function store(Request $request)
@@ -89,9 +35,42 @@ class ProductController extends Controller
 
         $product = Product::create($request->all());
 
-        Cache::forget('products.index');
-        Cache::forget('dashboard.data');
+        $tenant = app('tenant');
+        Cache::forget("tenant.{$tenant->id}.products.page.1");
+        Cache::forget("tenant.{$tenant->id}.dashboard.data");
 
-        return response()->json($product, 201);
+        return ProductResource::collection(collect([$product]))->response()->setStatusCode(201);
+    }
+
+    public function search(Request $request)
+    {
+        $keyword = $request->input('q');
+        $tenant = app('tenant');
+        $page = $request->input('page', 1);
+
+        $products = Cache::remember("tenant.{$tenant->id}.search.$keyword.page.$page", 30, function () use ($keyword) {
+            return Product::whereFullText('name', $keyword)
+                ->orWhereFullText('description', $keyword)
+                ->paginate(10);
+        });
+
+        return ProductResource::collection($products);
+    }
+
+    public function dashboard()
+    {
+        $tenant = app('tenant');
+
+        $data = Cache::remember("tenant.{$tenant->id}.dashboard.data", 60, function () {
+            return [
+                'total_products' => Product::count(),
+                'total_orders'   => Order::count(),
+                'total_revenue'  => Order::sum('total_amount'),
+                'categories'     => Category::all(['id','name']),
+                'top_products'   => Product::orderByDesc('sold_count')->take(5)->get(['id','name','sold_count'])
+            ];
+        });
+
+        return response()->json($data);
     }
 }

@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Order extends Model
 {
+    protected $connection = 'tenant'; # Multi Tenant used here
+    
     protected $fillable = ['customer_id', 'total_amount', 'status'];
 
     public function customer(): BelongsTo

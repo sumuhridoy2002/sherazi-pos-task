@@ -16,7 +16,7 @@ return new class extends Migration {
             $table->foreignId('category_id')->constrained()->onDelete('cascade');
 
             $table->index('category_id');
-            $table->fullText(['name', 'description']);
+            $table->fullText(['name', 'description']); # for search
 
             $table->timestamps();
         });

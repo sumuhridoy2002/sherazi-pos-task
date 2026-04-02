@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Resources\OrderResource;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
@@ -45,17 +46,16 @@ class OrderController extends Controller
                 ]);
 
                 $product->decrement('stock', $item['quantity']);
-
                 $totalAmount += $product->price * $item['quantity'];
             }
 
             $order->update(['total_amount' => $totalAmount]);
-
             DB::commit();
 
-            Cache::forget('orders.index');
+            $tenant = app('tenant');
+            Cache::forget("tenant.{$tenant->id}.orders.page.1");
 
-            return response()->json($order, 201);
+            return OrderResource::collection(collect([$order]))->response()->setStatusCode(201);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -63,34 +63,31 @@ class OrderController extends Controller
         }
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        $data = Cache::remember('orders.index', 60, function () {
-            return Order::with('items.product', 'customer')->get()->map(function ($order) {
-                return [
-                    'id'          => $order->id,
-                    'customer'    => $order->customer?->name,
-                    'total'       => $order->total_amount,
-                    'status'      => $order->status,
-                    'items_count' => $order->items?->count(),
-                    'created_at'  => $order->created_at
-                ];
-            });
+        $tenant = app('tenant');
+        $page = $request->input('page', 1);
+
+        $orders = Cache::remember("tenant.{$tenant->id}.orders.page.$page", 60, function () {
+            return Order::with('items.product:id,name,price','customer:id,name')
+                ->paginate(10, ['id','customer_id','status','total_amount','created_at']);
         });
 
-        return response()->json($data);
+        return OrderResource::collection($orders);
     }
 
     public function filterByStatus(Request $request)
     {
         $status = $request->input('status');
+        $tenant = app('tenant');
+        $page = $request->input('page', 1);
 
-        $orders = Cache::remember("orders.status.$status", 60, function () use ($status) {
-            return Order::with('items.product', 'customer')
+        $orders = Cache::remember("tenant.{$tenant->id}.orders.status.$status.page.$page", 60, function () use ($status) {
+            return Order::with('items.product:id,name,price','customer:id,name')
                 ->where('status', $status)
-                ->get();
+                ->paginate(10, ['id','customer_id','status','total_amount','created_at']);
         });
 
-        return response()->json($orders);
+        return OrderResource::collection($orders);
     }
 }
