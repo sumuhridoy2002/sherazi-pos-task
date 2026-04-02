@@ -11,6 +11,10 @@ return new class extends Migration {
             $table->foreignId('customer_id')->constrained()->onDelete('cascade');
             $table->enum('status', ['pending', 'completed', 'cancelled'])->default('pending');
             $table->decimal('total_amount', 12, 2)->default(0);
+
+            $table->index('customer_id');
+            $table->index('status');
+            
             $table->timestamps();
         });
     }

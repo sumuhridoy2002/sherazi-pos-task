@@ -14,6 +14,10 @@ return new class extends Migration {
             $table->integer('stock')->default(0);
             $table->integer('sold_count')->default(0);
             $table->foreignId('category_id')->constrained()->onDelete('cascade');
+
+            $table->index('category_id');
+            $table->fullText(['name', 'description']);
+
             $table->timestamps();
         });
     }
