@@ -52,8 +52,7 @@ class OrderController extends Controller
             $order->update(['total_amount' => $totalAmount]);
             DB::commit();
 
-            $tenant = app('tenant');
-            Cache::forget("tenant.{$tenant->id}.orders.page.1");
+            Cache::forget("orders.page.1");
 
             return OrderResource::collection(collect([$order]))->response()->setStatusCode(201);
 
@@ -65,10 +64,9 @@ class OrderController extends Controller
 
     public function index(Request $request)
     {
-        $tenant = app('tenant');
         $page = $request->input('page', 1);
 
-        $orders = Cache::remember("tenant.{$tenant->id}.orders.page.$page", 60, function () {
+        $orders = Cache::remember("orders.page.$page", 60, function () {
             return Order::with('items.product:id,name,price','customer:id,name')
                 ->paginate(10, ['id','customer_id','status','total_amount','created_at']);
         });
@@ -79,10 +77,9 @@ class OrderController extends Controller
     public function filterByStatus(Request $request)
     {
         $status = $request->input('status');
-        $tenant = app('tenant');
         $page = $request->input('page', 1);
 
-        $orders = Cache::remember("tenant.{$tenant->id}.orders.status.$status.page.$page", 60, function () use ($status) {
+        $orders = Cache::remember("orders.status.$status.page.$page", 60, function () use ($status) {
             return Order::with('items.product:id,name,price','customer:id,name')
                 ->where('status', $status)
                 ->paginate(10, ['id','customer_id','status','total_amount','created_at']);

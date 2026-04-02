@@ -13,12 +13,14 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
-        $tenant = app('tenant'); # current tenant
         $page = $request->input('page', 1);
+        $perPage = 10;
+        $cacheKey = "products.page.$page";
 
-        $products = Cache::remember("tenant.{$tenant->id}.products.page.$page", 60, function () {
+        $products = Cache::remember($cacheKey, 60, function () use ($perPage) {
             return Product::with('category:id,name')
-                ->paginate(10, ['id','name','price','stock','category_id']);
+                ->select(['id','name','price','stock','category_id'])
+                ->paginate($perPage);
         });
 
         return ProductResource::collection($products);
@@ -35,9 +37,8 @@ class ProductController extends Controller
 
         $product = Product::create($request->all());
 
-        $tenant = app('tenant');
-        Cache::forget("tenant.{$tenant->id}.products.page.1");
-        Cache::forget("tenant.{$tenant->id}.dashboard.data");
+        Cache::forget("products.page.1");
+        Cache::forget("dashboard.data");
 
         return ProductResource::collection(collect([$product]))->response()->setStatusCode(201);
     }
@@ -45,10 +46,9 @@ class ProductController extends Controller
     public function search(Request $request)
     {
         $keyword = $request->input('q');
-        $tenant = app('tenant');
         $page = $request->input('page', 1);
 
-        $products = Cache::remember("tenant.{$tenant->id}.search.$keyword.page.$page", 30, function () use ($keyword) {
+        $products = Cache::remember("search.$keyword.page.$page", 30, function () use ($keyword) {
             return Product::whereFullText('name', $keyword)
                 ->orWhereFullText('description', $keyword)
                 ->paginate(10);
@@ -59,9 +59,7 @@ class ProductController extends Controller
 
     public function dashboard()
     {
-        $tenant = app('tenant');
-
-        $data = Cache::remember("tenant.{$tenant->id}.dashboard.data", 60, function () {
+        $data = Cache::remember("dashboard.data", 60, function () {
             return [
                 'total_products' => Product::count(),
                 'total_orders'   => Order::count(),

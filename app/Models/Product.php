@@ -8,8 +8,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Product extends Model
 {
-    protected $connection = 'tenant'; # Multi Tenant used here
-
     protected $fillable = ['name', 'description', 'price', 'stock', 'sold_count', 'category_id'];
 
     public function category(): BelongsTo
