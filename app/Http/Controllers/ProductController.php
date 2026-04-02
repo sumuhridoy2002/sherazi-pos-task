@@ -6,74 +6,74 @@ use App\Models\Product;
 use App\Models\Category;
 use App\Models\Order;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class ProductController extends Controller
 {
     public function index()
     {
-        $products = Product::with('category')->get();
-
-        $result = [];
-        foreach ($products as $product) {
-            $result[] = [
-                'id'       => $product->id,
-                'name'     => $product->name,
-                'price'    => $product->price,
-                'stock'    => $product->stock,
-                'category' => $product->category?->name
-            ];
-        }
+        $result = Cache::remember('products.index', 60, function () {
+            return Product::with('category')->get()->map(function ($product) {
+                return [
+                    'id'       => $product->id,
+                    'name'     => $product->name,
+                    'price'    => $product->price,
+                    'stock'    => $product->stock,
+                    'category' => $product->category?->name
+                ];
+            });
+        });
 
         return response()->json($result);
     }
 
     public function salesReport()
     {
-        $orders = Order::with('items.product', 'customer')->get();
+        $report = Cache::remember('report.sales', 120, function () {
+            $orders = Order::with('items.product', 'customer')->get();
 
-        $report = [];
-        foreach ($orders as $order) {
-            foreach ($order->items as $item) {
-                $report[] = [
-                    'order_id'     => $order->id,
-                    'product_name' => $item->product?->name,
-                    'qty'          => $item->quantity,
-                    'total'        => $item->quantity * $item->product?->price,
-                    'customer'     => $order->customer?->name
-                ];
+            $data = [];
+            foreach ($orders as $order) {
+                foreach ($order->items as $item) {
+                    $data[] = [
+                        'order_id'     => $order->id,
+                        'product_name' => $item->product?->name,
+                        'qty'          => $item->quantity,
+                        'total'        => $item->quantity * $item->product?->price,
+                        'customer'     => $order->customer?->name
+                    ];
+                }
             }
-        }
+            return $data;
+        });
 
         return response()->json($report);
     }
 
     public function dashboard()
     {
-        $totalProducts = Product::count();
-        $totalOrders   = Order::count();
-        $totalRevenue  = Order::sum('total_amount');
-        $categories    = Category::all();
+        $data = Cache::remember('dashboard.data', 60, function () {
+            return [
+                'total_products' => Product::count(),
+                'total_orders'   => Order::count(),
+                'total_revenue'  => Order::sum('total_amount'),
+                'categories'     => Category::all(),
+                'top_products'   => Product::orderByDesc('sold_count')->take(5)->get()
+            ];
+        });
 
-        $topProducts = Product::all()
-            ->sortByDesc('sold_count')
-            ->take(5)
-            ->values();
-
-        return response()->json([
-            'total_products' => $totalProducts,
-            'total_orders'   => $totalOrders,
-            'total_revenue'  => $totalRevenue,
-            'categories'     => $categories,
-            'top_products'   => $topProducts
-        ]);
+        return response()->json($data);
     }
 
     public function search(Request $request)
     {
-        $keyword  = $request->input('q');
-        $products = Product::where('name', 'LIKE', '%' . $keyword . '%')
-                           ->orWhere('description', 'LIKE', '%' . $keyword . '%')
-                           ->get();
+        $keyword = $request->input('q');
+
+        $products = Cache::remember("search.$keyword", 30, function () use ($keyword) {
+            return Product::where('name', 'LIKE', "%$keyword%")
+                ->orWhere('description', 'LIKE', "%$keyword%")
+                ->get();
+        });
 
         return response()->json($products);
     }
@@ -88,6 +88,9 @@ class ProductController extends Controller
         ]);
 
         $product = Product::create($request->all());
+
+        Cache::forget('products.index');
+        Cache::forget('dashboard.data');
 
         return response()->json($product, 201);
     }

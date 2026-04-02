@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
@@ -17,53 +18,65 @@ class OrderController extends Controller
             'items'       => 'required|array'
         ]);
 
-        $totalAmount = 0;
+        DB::beginTransaction();
 
-        $order = Order::create([
-            'customer_id'  => $request->customer_id,
-            'total_amount' => 0,
-            'status'       => 'pending'
-        ]);
+        try {
+            $totalAmount = 0;
 
-        foreach ($request->items as $item) {
-            $product = Product::find($item['product_id']);
-
-            if (!$product || $product->stock < $item['quantity']) {
-                return response()->json(['error' => 'Product unavailable'], 422);
-            }
-
-            OrderItem::create([
-                'order_id'   => $order->id,
-                'product_id' => $item['product_id'],
-                'quantity'   => $item['quantity'],
-                'unit_price' => $product->price
+            $order = Order::create([
+                'customer_id'  => $request->customer_id,
+                'total_amount' => 0,
+                'status'       => 'pending'
             ]);
 
-            $product->decrement('stock', $item['quantity']);
+            foreach ($request->items as $item) {
+                $product = Product::find($item['product_id']);
 
-            $totalAmount += $product->price * $item['quantity'];
+                if (!$product || $product->stock < $item['quantity']) {
+                    DB::rollBack();
+                    return response()->json(['error' => 'Product unavailable'], 422);
+                }
+
+                OrderItem::create([
+                    'order_id'   => $order->id,
+                    'product_id' => $item['product_id'],
+                    'quantity'   => $item['quantity'],
+                    'unit_price' => $product->price
+                ]);
+
+                $product->decrement('stock', $item['quantity']);
+
+                $totalAmount += $product->price * $item['quantity'];
+            }
+
+            $order->update(['total_amount' => $totalAmount]);
+
+            DB::commit();
+
+            Cache::forget('orders.index');
+
+            return response()->json($order, 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => 'Failed'], 500);
         }
-
-        $order->update(['total_amount' => $totalAmount]);
-
-        return response()->json($order, 201);
     }
 
     public function index()
     {
-        $orders = Order::with('items.product', 'customer')->get();
-
-        $data = [];
-        foreach ($orders as $order) {
-            $data[] = [
-                'id'          => $order->id,
-                'customer'    => $order->customer?->name,
-                'total'       => $order->total_amount,
-                'status'      => $order->status,
-                'items_count' => $order->items?->count(),
-                'created_at'  => $order->created_at
-            ];
-        }
+        $data = Cache::remember('orders.index', 60, function () {
+            return Order::with('items.product', 'customer')->get()->map(function ($order) {
+                return [
+                    'id'          => $order->id,
+                    'customer'    => $order->customer?->name,
+                    'total'       => $order->total_amount,
+                    'status'      => $order->status,
+                    'items_count' => $order->items?->count(),
+                    'created_at'  => $order->created_at
+                ];
+            });
+        });
 
         return response()->json($data);
     }
@@ -72,7 +85,11 @@ class OrderController extends Controller
     {
         $status = $request->input('status');
 
-        $orders = Order::with('items.product', 'customer')->where('status', $status)->get();
+        $orders = Cache::remember("orders.status.$status", 60, function () use ($status) {
+            return Order::with('items.product', 'customer')
+                ->where('status', $status)
+                ->get();
+        });
 
         return response()->json($orders);
     }
